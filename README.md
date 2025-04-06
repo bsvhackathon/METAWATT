@@ -1,55 +1,65 @@
-# BSV Project
+# METAWATT
 
-Standard BSV project structure.
+METAWATT is a demonstration application showcasing how to tokenize and manage Renewable Energy Certificates (RECs) on Bitcoin SV. It leverages the MetaNet Client to securely create, purchase, and claim certificates on-chain, illustrating a transparent way to verify renewable energy usage.
 
-Helpful Links:
+## Standard BSV Project Structure
+Below is a general overview of a typical BSV project layout and workflow. METAWATT adapts this structure by integrating a React-based frontend, a Bitcoin SV backend, and the MetaNet Client for transaction signing and encryption.
 
-- [LARS (for local development)](https://github.com/bitcoin-sv/lars)
-- [CARS CLI (for cloud deployment)](https://github.com/bitcoin-sv/cars-cli)
-- [RUN YOUR OWN CARS NODE](https://github.com/bitcoin-sv/cars-node)
-- [Specification for deployment-info.json](https://github.com/bitcoin-sv/BRCs/blob/master/apps/0102.md)
+## Helpful Links
+LARS (for local development)
+https://github.com/bitcoin-sv/lars
+
+MetaNet Client Repository
+https://github.com/p2ppsr/metanet-desktop
+
+Todo.ts
+https://github.com/p2ppsr/todo-ts
+
 
 ## Getting Started
+Clone this repository:
 
-- Clone this repository
-- Run `npm i` to install dependencies
-- Run `npm run lars` to configure the local environment according to your needs
-- Use `npm run start` to spin up and start writing code
-- When you're ready to publish your project, start by running `npm run cars` and configuring one (or, especially for overlays, ideally multiple) hosting provider(s)
-- For each of your configurations, execute `npm run build` to create CARS project artifacts
-- Deploy with `npm run deploy` and your project will be online
-- Use `cars` interactively, or visit your hosting provider(s) web portals, to view logs, configure custom domains, and pay your hosting bills
-- Share your new BSV project, it is now online!
+git clone https://github.com/bsvhackathon/METAWATT.git
+cd METAWATT
+Install dependencies:
 
-## Directory Structure
+npm i
+Local environment (optional advanced usage with LARS):
 
-The project structure is roughly as follows, although it can vary by project.
+npm run lars
+Configure your local environment as needed for development.
 
-```
-| - deployment-info.json
-| - package.json
-| - local-data/
-| - frontend/
-  | - package.json
-  | - webpack.config.js
-  | - src/...
-  | - public/...
-  | - build/...
-| - backend/
-  | - package.json
-  | - tsconfig.json
-  | - mod.ts
-  | - src/
-    | - contracts/...
-    | - lookup-services/...
-    | - topic-managers/...
-    | - script-templates/...
-  | - artifacts/
-  | - dist/
-```
+Start developing:
 
-The one constant is `deployment-info.json`.
+npm run start
+This spins up the application. Navigate to http://localhost:3000 to access METAWATT’s UI.
 
-## License
+Build and deploy (CARS workflow):
 
-[Open BSV License](./LICENSE.txt)
+When ready to publish, first run:
+
+npm run cars
+Configure one or more hosting providers for your project.
+
+Build artifacts with:
+
+npm run build
+Deploy using:
+
+npm run deploy
+You can view logs, set up custom domains, or manage payments via your hosting providers’ portals or via cars commands.
+
+Share your project once deployed, and invite others to try your on-chain solution!
+
+###
+
+frontend/
+Contains the React application (e.g., App.tsx, charts, and UI logic).
+
+backend/
+Houses server-side or BSV logic, including contract interactions and scripts.
+
+Feel free to adapt the layout to fit your specific use case.
+
+### License
+This project is made available under the Open BSV License. The license encourages innovation on Bitcoin SV while ensuring new developments remain open and interoperable.
