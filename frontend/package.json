@@ -18,6 +18,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-toastify": "^10.0.5",
+    "recharts": "^2.15.2",
     "use-async-effect": "^2.2.7"
   },
   "scripts": {

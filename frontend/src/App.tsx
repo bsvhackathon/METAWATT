@@ -2,67 +2,107 @@
 /**
  * src/App.tsx
  *
- * This file contains the primary business logic and UI code for the METAWATT
- * application for renewable energy certificates.
+ * Changes:
+ *  - Removed the usage table from the My Certificates tab
+ *  - Updated charts to use blues & greens
  */
 import React, { useState, useEffect, type FormEvent } from 'react'
 import { ToastContainer, toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import {
-  AppBar, Toolbar, List, ListItem, ListItemText, ListItemIcon, Checkbox, Dialog,
-  DialogTitle, DialogContent, DialogContentText, DialogActions, TextField,
-  Button, Fab, LinearProgress, Typography, IconButton, Grid, Card, CardContent,
-  CardActions
+  AppBar,
+  Toolbar,
+  Tabs,
+  Tab,
+  Container,
+  Paper,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+  Button,
+  Typography,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Checkbox,
+  LinearProgress,
+  IconButton
 } from '@mui/material'
+import Box from '@mui/material/Box'
 import { styled } from '@mui/system'
-import AddIcon from '@mui/icons-material/Add'
 import GitHubIcon from '@mui/icons-material/GitHub'
 import useAsyncEffect from 'use-async-effect'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts'
+
 import NoMncModal from './components/NoMncModal/NoMncModal'
-import { WalletClient, PushDrop, Utils, Transaction, LockingScript, type WalletOutput, Beef, TransactionOutput, BeefTx } from '@bsv/sdk'
+import { WalletClient, PushDrop, Utils, Transaction, LockingScript, type WalletOutput, Beef } from '@bsv/sdk'
 import checkForMetaNetClient from './utils/checkForMetaNetClient'
 import { type Certificate } from './types/types'
-// This stylesheet also uses this for themeing.
 import './App.scss'
 import { Services } from '@bsv/wallet-toolbox-client'
 
-// This is the namespace address for the METAWATT protocol
-// You can create your own Bitcoin address to use, and customize this protocol
-// for your own needs.
 const METAWATT_PROTO_ADDR = '1METAWATTCertificateTokenProtocolxyz'
 
-// These are some basic styling rules for the React application.
-// We are using MUI (https://mui.com) for all of our UI components (i.e. buttons and dialogs etc.).
 const AppBarPlaceholder = styled('div')({
   height: '4em'
 })
 
-const NoItems = styled(Grid)({
-  margin: 'auto',
-  textAlign: 'center',
-  marginTop: '5em'
-})
-
 const LoadingBar = styled(LinearProgress)({
-  margin: '1em'
+  margin: '1em 0'
 })
 
 const GitHubIconStyle = styled(IconButton)({
   color: '#ffffff'
 })
 
-const MarketplaceContainer = styled(Grid)({
-  padding: '2em'
-})
-
-const CertificateCard = styled(Card)({
-  margin: '1em',
-  padding: '1em'
-})
-
 const walletClient = new WalletClient()
 
-// Hardcoded renewable energy certificates for the marketplace
+//
+// Mock data for Recharts
+//
+
+// Line chart data: daily availability of resources by time (using blues & greens)
+const energyAvailabilityData = [
+  { time: '6 AM', Solar: 30, Wind: 10, Hydro: 5 },
+  { time: '9 AM', Solar: 60, Wind: 20, Hydro: 12 },
+  { time: '12 PM', Solar: 90, Wind: 28, Hydro: 18 },
+  { time: '3 PM', Solar: 70, Wind: 25, Hydro: 15 },
+  { time: '6 PM', Solar: 20, Wind: 30, Hydro: 25 }
+]
+
+// Pie chart data: usage by resource type (using blues & greens)
+const usageResourceData = [
+  { name: 'Solar', value: 160 },
+  { name: 'Wind', value: 80 },
+  { name: 'Hydro', value: 40 },
+  { name: 'Biomass', value: 20 }
+]
+
+// Colors for the pie chart slices, all in a blue-green palette
+const usageColors = ['#4A90E2', '#50E3C2', '#7ED321', '#B8E986']
+
+//
+// Hardcoded renewable energy certificates (six total)
+//
 const marketplaceCertificates = [
   {
     id: 'cert-001',
@@ -87,11 +127,40 @@ const marketplaceCertificates = [
     amount: '500 kWh',
     date: '2025-03-25',
     price: 5000
+  },
+  {
+    id: 'cert-004',
+    source: 'Solar Farm D',
+    location: 'California, USA',
+    amount: '300 kWh',
+    date: '2025-04-01',
+    price: 1500
+  },
+  {
+    id: 'cert-005',
+    source: 'Wind Farm E',
+    location: 'New Mexico, USA',
+    amount: '400 kWh',
+    date: '2025-04-05',
+    price: 2500
+  },
+  {
+    id: 'cert-006',
+    source: 'Hydro Plant F',
+    location: 'Oregon, USA',
+    amount: '800 kWh',
+    date: '2025-04-10',
+    price: 6000
   }
 ]
 
 const App: React.FC = () => {
-  // These are some state variables that control the app's interface.
+  // Tabs: 0 => Marketplace, 1 => My Certificates
+  const [tabValue, setTabValue] = useState(0)
+  const handleTabChange = (_: React.SyntheticEvent, newVal: number) => {
+    setTabValue(newVal)
+  }
+
   const [isMncMissing, setIsMncMissing] = useState<boolean>(false)
   const [buyLoading, setBuyLoading] = useState<boolean>(false)
   const [selectedCertId, setSelectedCertId] = useState<string | null>(null)
@@ -101,71 +170,58 @@ const App: React.FC = () => {
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null)
   const [claimLoading, setClaimLoading] = useState<boolean>(false)
 
-  // Run a 1s interval for checking if MNC is running
+  // Check if the MetaNet Client is installed
   useAsyncEffect(() => {
     const intervalId = setInterval(() => {
-      checkForMetaNetClient().then(hasMNC => {
-        if (hasMNC === 0) {
-          setIsMncMissing(true) // Open modal if MNC is not found
-        } else {
-          setIsMncMissing(false) // Ensure modal is closed if MNC is found
-          clearInterval(intervalId)
-        }
-      }).catch(error => {
-        console.error('Error checking for MetaNet Client:', error)
-      })
+      checkForMetaNetClient()
+        .then(hasMNC => {
+          if (hasMNC === 0) setIsMncMissing(true)
+          else {
+            setIsMncMissing(false)
+            clearInterval(intervalId)
+          }
+        })
+        .catch(error => console.error('Error checking for MetaNet Client:', error))
     }, 1000)
 
-    // Return a cleanup function
-    return () => {
-      clearInterval(intervalId)
-    }
+    return () => clearInterval(intervalId)
   }, [])
 
-  // Creates a new METAWATT certificate token
+  // Create a new METAWATT certificate token (purchase a certificate)
   const handleBuyCertificate = async (certId: string): Promise<void> => {
     try {
-      // Find the certificate in the marketplace
       const cert = marketplaceCertificates.find(c => c.id === certId)
       if (!cert) {
         toast.error('Certificate not found!')
         return
       }
-
-      // Start loading animation
       setBuyLoading(true)
       setSelectedCertId(certId)
 
-      // Create certificate data string
       const certData = JSON.stringify(cert)
-
-      // Encrypt the certificate data
       const encryptedCert = (await walletClient.encrypt({
         plaintext: Utils.toArray(certData, 'utf8'),
         protocolID: [0, 'metawatt'],
         keyID: '1'
       })).ciphertext
 
-      // Create a PushDrop Bitcoin token for the certificate
       const pushdrop = new PushDrop(walletClient)
       const bitcoinOutputScript = await pushdrop.lock(
-        [
-          Utils.toArray(METAWATT_PROTO_ADDR, 'utf8') as number[], 
-          encryptedCert
-        ],
+        [Utils.toArray(METAWATT_PROTO_ADDR, 'utf8') as number[], encryptedCert],
         [0, 'metawatt'],
         '1',
         'self'
       )
 
-      // Create a Bitcoin transaction for the new certificate token
       const newCertificateToken = await walletClient.createAction({
-        outputs: [{
-          lockingScript: bitcoinOutputScript.toHex(),
-          satoshis: cert.price,
-          basket: 'metawatt certificates',
-          outputDescription: `Renewable Energy Certificate: ${cert.source} - ${cert.amount}`
-        }],
+        outputs: [
+          {
+            lockingScript: bitcoinOutputScript.toHex(),
+            satoshis: cert.price,
+            basket: 'metawatt certificates',
+            outputDescription: `Renewable Energy Certificate: ${cert.source} - ${cert.amount}`
+          }
+        ],
         options: {
           randomizeOutputs: false,
           acceptDelayedBroadcast: false
@@ -173,9 +229,8 @@ const App: React.FC = () => {
         description: `Purchase Renewable Energy Certificate: ${cert.source} - ${cert.amount}`
       })
 
-      // Success message and update state
       toast.dark('Certificate purchased successfully!')
-      setCertificates([
+      setCertificates(prev => [
         {
           certData: cert,
           sats: cert.price,
@@ -183,7 +238,7 @@ const App: React.FC = () => {
           lockingScript: bitcoinOutputScript.toHex(),
           beef: newCertificateToken.tx
         },
-        ...certificates
+        ...prev
       ])
     } catch (e) {
       toast.error((e as Error).message)
@@ -194,45 +249,36 @@ const App: React.FC = () => {
     }
   }
 
-  // Claims a certificate token, returning the satoshis
+  // Claim a certificate and get satoshis back
   const handleClaimSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     try {
       setClaimLoading(true)
+      if (!selectedCertificate) throw new Error('No certificate selected')
 
-      if (selectedCertificate === null) {
-        throw new Error('selectedCertificate does not exist')
-      }
+      let description = `Claim Certificate: ${selectedCertificate.certData.source} - ${selectedCertificate.certData.amount}`
+      if (description.length > 128) description = description.substring(0, 128)
 
-      // Create a description for the action
-      let description = `Claim Renewable Energy Certificate: ${selectedCertificate.certData.source} - ${selectedCertificate.certData.amount}`
-      if (description.length > 128) { 
-        description = description.substring(0, 128) 
-      }
-
-      const txid = selectedCertificate.outpoint.split('.')[0]
       const loadedBeef = Beef.fromBinary(selectedCertificate.beef as number[])
-      const ok = await loadedBeef.verify(await new Services('main').getChainTracker(), true)
+      await loadedBeef.verify(await new Services('main').getChainTracker(), true)
 
       const { signableTransaction } = await walletClient.createAction({
         description,
         inputBEEF: loadedBeef.toBinary(),
-        inputs: [{
-          inputDescription: 'Claim Renewable Energy Certificate',
-          outpoint: selectedCertificate.outpoint,
-          unlockingScriptLength: 73
-        }],
+        inputs: [
+          {
+            inputDescription: 'Claim Certificate',
+            outpoint: selectedCertificate.outpoint,
+            unlockingScriptLength: 73
+          }
+        ],
         options: {
           randomizeOutputs: false
         }
       })
+      if (!signableTransaction) throw new Error('Failed to create signable transaction')
 
-      if (signableTransaction === undefined) {
-        throw new Error('Failed to create signable transaction')
-      }
       const partialTx = Transaction.fromBEEF(signableTransaction.tx)
-
-      // Unlock the token
       const unlocker = new PushDrop(walletClient).unlock(
         [0, 'metawatt'],
         '1',
@@ -242,83 +288,76 @@ const App: React.FC = () => {
         selectedCertificate.sats,
         LockingScript.fromHex(selectedCertificate.lockingScript)
       )
-
       const unlockingScript = await unlocker.sign(partialTx, 0)
 
-      // Sign the action to claim the certificate
-      const signResult = await walletClient.signAction({
+      await walletClient.signAction({
         reference: signableTransaction.reference,
         spends: {
-          0: {
-            unlockingScript: unlockingScript.toHex()
-          }
+          0: { unlockingScript: unlockingScript.toHex() }
         }
       })
-      console.log(signResult)
 
-      // Success message and update state
       toast.dark('Certificate claimed successfully! 🎉')
-      setCertificates((oldCerts) => {
-        const index = oldCerts.findIndex(x => x === selectedCertificate)
-        if (index > -1) oldCerts.splice(index, 1)
+      setCertificates(oldCerts => {
+        const idx = oldCerts.findIndex(c => c === selectedCertificate)
+        if (idx > -1) oldCerts.splice(idx, 1)
         return [...oldCerts]
       })
       setSelectedCertificate(null)
       setClaimOpen(false)
-    } catch (e) {
-      toast.error(`Error claiming certificate: ${(e as Error).message}`)
-      console.error(e)
+    } catch (error) {
+      toast.error(`Error claiming certificate: ${(error as Error).message}`)
+      console.error(error)
     } finally {
       setClaimLoading(false)
     }
   }
 
-  // Load existing certificate tokens from the user's basket
+  // Load existing certificates from the wallet
   useEffect(() => {
     void (async () => {
       try {
-        // Fetch existing certificates from the user's basket
         const certsFromBasket = await walletClient.listOutputs({
           basket: 'metawatt certificates',
           include: 'entire transactions'
         })
 
-        // Decrypt and process the certificates
-        let txid: string
-        const decryptedCertsResults = await Promise.all(certsFromBasket.outputs.map(async (cert: WalletOutput, i: number) => {
-          try {
-            txid = certsFromBasket.outputs[i].outpoint.split('.')[0]
-            const tx = Transaction.fromBEEF(certsFromBasket.BEEF as number[], cert.outpoint.split('.')[0])
-            const lockingScript = tx!.outputs[0].lockingScript
+        const decryptedCertsResults = await Promise.all(
+          certsFromBasket.outputs.map(async (cert: WalletOutput, i: number) => {
+            try {
+              const txid = cert.outpoint.split('.')[0]
+              const tx = Transaction.fromBEEF(certsFromBasket.BEEF as number[], txid)
+              if (!tx) return null
 
-            const decodedCert = PushDrop.decode(lockingScript)
-            const encryptedCert = decodedCert.fields[1]
-            const decryptedCertNumArray = await walletClient.decrypt({
-              ciphertext: encryptedCert,
-              protocolID: [0, 'metawatt'],
-              keyID: '1'
-            })
-            const decryptedCertString = Utils.toUTF8(decryptedCertNumArray.plaintext)
-            const certData = JSON.parse(decryptedCertString)
+              const lockingScript = tx.outputs[0].lockingScript
+              const decodedCert = PushDrop.decode(lockingScript)
+              const encryptedCert = decodedCert.fields[1]
 
-            return {
-              lockingScript: lockingScript.toHex(),
-              outpoint: `${txid}.${i}`,
-              sats: cert.satoshis ?? 0,
-              certData: certData,
-              beef: certsFromBasket.BEEF
+              const decryptedCertNumArray = await walletClient.decrypt({
+                ciphertext: encryptedCert,
+                protocolID: [0, 'metawatt'],
+                keyID: '1'
+              })
+              const decryptedCertString = Utils.toUTF8(decryptedCertNumArray.plaintext)
+              const certData = JSON.parse(decryptedCertString)
+
+              return {
+                lockingScript: lockingScript.toHex(),
+                outpoint: `${txid}.${i}`,
+                sats: cert.satoshis ?? 0,
+                certData,
+                beef: certsFromBasket.BEEF
+              }
+            } catch (err) {
+              console.error('Error decrypting certificate:', err)
+              return null
             }
-          } catch (error) {
-            console.error('Error decrypting certificate:', error)
-            return null
-          }
-        }))
+          })
+        )
 
-        // Filter out nulls (errors) and reverse the order
         const decryptedCerts: Certificate[] = decryptedCertsResults.filter(
           (result): result is Certificate => result !== null
         )
-
         setCertificates(decryptedCerts.reverse())
       } catch (e) {
         const errorCode = (e as any).code
@@ -332,7 +371,6 @@ const App: React.FC = () => {
     })()
   }, [])
 
-  // Opens the claim dialog for the selected certificate
   const openClaimModal = (cert: Certificate) => () => {
     setSelectedCertificate(cert)
     setClaimOpen(true)
@@ -341,108 +379,183 @@ const App: React.FC = () => {
   return (
     <>
       <NoMncModal open={isMncMissing} onClose={() => { setIsMncMissing(false) }} />
-      <ToastContainer
-        position='top-right'
-        autoClose={5000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-      />
+      <ToastContainer position='top-right' />
+
       <AppBar position='static'>
         <Toolbar>
           <Typography variant='h6' component='div' sx={{ flexGrow: 1 }}>
             METAWATT — Renewable Energy Certificates
           </Typography>
-          <GitHubIconStyle onClick={() => window.open('https://github.com/metawatt', '_blank')}>
+          <GitHubIconStyle
+            onClick={() => window.open('https://github.com/bsvhackathon/METAWATT', '_blank')}
+          >
             <GitHubIcon />
           </GitHubIconStyle>
         </Toolbar>
       </AppBar>
+      <AppBar position='static'>
+        <Tabs
+          value={tabValue}
+          onChange={handleTabChange}
+          indicatorColor='secondary'
+          textColor='inherit'
+        >
+          <Tab label='Marketplace' />
+          <Tab label='My Certificates' />
+        </Tabs>
+      </AppBar>
       <AppBarPlaceholder />
 
-      {/* Marketplace Section */}
-      <Typography variant='h4' sx={{ margin: '1em' }}>Marketplace</Typography>
-      <MarketplaceContainer container spacing={2}>
-        {marketplaceCertificates.map((cert) => (
-          <Grid item xs={12} sm={6} md={4} key={cert.id}>
-            <CertificateCard>
-              <CardContent>
-                <Typography variant='h5'>{cert.source}</Typography>
-                <Typography variant='body1'>Location: {cert.location}</Typography>
-                <Typography variant='body1'>Amount: {cert.amount}</Typography>
-                <Typography variant='body1'>Date: {cert.date}</Typography>
-                <Typography variant='body1'>Price: {cert.price} satoshis</Typography>
-              </CardContent>
-              <CardActions>
-                <Button 
-                  variant='contained' 
-                  color='primary'
-                  disabled={buyLoading && selectedCertId === cert.id}
-                  onClick={() => { void handleBuyCertificate(cert.id) }}
-                >
-                  {buyLoading && selectedCertId === cert.id ? 'Processing...' : 'Buy Certificate'}
-                </Button>
-              </CardActions>
-            </CertificateCard>
-          </Grid>
-        ))}
-      </MarketplaceContainer>
+      {/* Tab 0: Marketplace */}
+      {tabValue === 0 && (
+        <Container maxWidth='lg' sx={{ mt: 4, mb: 4 }}>
+          <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
+            <Typography variant='h4' gutterBottom>
+              Marketplace
+            </Typography>
 
-      {/* My Certificates Section */}
-      <Typography variant='h4' sx={{ margin: '1em' }}>My Certificates</Typography>
-      {certificatesLoading ? (
-        <LoadingBar />
-      ) : (
-        <List>
-          {certificates.length === 0 && (
-            <NoItems container direction='column' justifyContent='center' alignItems='center'>
-              <Grid item justifyContent="center" alignItems="center">
-                <Typography variant='h5'>No Certificates Owned</Typography>
-                <Typography color='textSecondary'>
-                  Purchase certificates from the marketplace above
-                </Typography>
-              </Grid>
-            </NoItems>
-          )}
-          {certificates.map((cert, i) => (
-            <ListItem key={i} button onClick={openClaimModal(cert)}>
-              <ListItemIcon><Checkbox checked={false} /></ListItemIcon>
-              <ListItemText 
-                primary={`${cert.certData.source} - ${cert.certData.amount}`} 
-                secondary={`${cert.sats} satoshis - Click to claim`} 
-              />
-            </ListItem>
-          ))}
-        </List>
+            {/* Recharts line chart for energy availability with blues & greens */}
+            <Typography variant='h6' sx={{ mb: 2 }}>
+              Mock Energy Availability (by resource & time of day)
+            </Typography>
+            <Box sx={{ width: '100%', height: 350 }}>
+              <ResponsiveContainer>
+                <LineChart data={energyAvailabilityData}>
+                  <CartesianGrid strokeDasharray='3 3' />
+                  <XAxis dataKey='time' />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  {/* Blues & Greens for lines */}
+                  <Line type='monotone' dataKey='Solar' stroke='#4A90E2' strokeWidth={2} />
+                  <Line type='monotone' dataKey='Wind' stroke='#50E3C2' strokeWidth={2} />
+                  <Line type='monotone' dataKey='Hydro' stroke='#7ED321' strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Box>
+
+            {/* Certificates for sale */}
+            <Grid container spacing={3} sx={{ mt: 3 }}>
+              {marketplaceCertificates.map((cert) => (
+                <Grid item xs={12} sm={6} md={4} key={cert.id}>
+                  <Card variant='outlined'>
+                    <CardContent>
+                      <Typography variant='h5' gutterBottom>
+                        {cert.source}
+                      </Typography>
+                      <Typography>Location: {cert.location}</Typography>
+                      <Typography>Amount: {cert.amount}</Typography>
+                      <Typography>Date: {cert.date}</Typography>
+                      <Typography>Price: {cert.price} satoshis</Typography>
+                    </CardContent>
+                    <CardActions>
+                      <Button
+                        variant='contained'
+                        color='primary'
+                        disabled={buyLoading && selectedCertId === cert.id}
+                        onClick={() => {
+                          void handleBuyCertificate(cert.id)
+                        }}
+                      >
+                        {buyLoading && selectedCertId === cert.id ? 'Processing...' : 'Buy Certificate'}
+                      </Button>
+                    </CardActions>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Paper>
+        </Container>
+      )}
+
+      {/* Tab 1: My Certificates */}
+      {tabValue === 1 && (
+        <Container maxWidth='lg' sx={{ mt: 4, mb: 4 }}>
+          {/* Pie Chart: usage distribution by resource type (blue & green palette) */}
+          <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
+            <Typography variant='h4' gutterBottom>
+              Usage by Resource Type
+            </Typography>
+            <Box sx={{ width: '100%', height: 350 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={usageResourceData}
+                    dataKey='value'
+                    nameKey='name'
+                    outerRadius={100}
+                    fill='#4A90E2'
+                    label
+                  >
+                    {usageResourceData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={usageColors[index % usageColors.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </Box>
+          </Paper>
+
+          {/* My Certificates Section */}
+          <Paper elevation={3} sx={{ p: 3 }}>
+            <Typography variant='h4' gutterBottom>
+              My Certificates
+            </Typography>
+            {certificatesLoading ? (
+              <LoadingBar />
+            ) : certificates.length === 0 ? (
+              <Typography sx={{ mt: 2 }} color='textSecondary'>
+                You currently have no certificates. Purchase one from the Marketplace.
+              </Typography>
+            ) : (
+              <List>
+                {certificates.map((cert, i) => (
+                  <ListItem key={i} button onClick={openClaimModal(cert)}>
+                    <ListItemIcon>
+                      <Checkbox checked={false} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={`${cert.certData.source} - ${cert.certData.amount}`}
+                      secondary={`${cert.sats} satoshis • Click to claim`}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Paper>
+        </Container>
       )}
 
       {/* Claim Certificate Dialog */}
-      <Dialog open={claimOpen} onClose={() => { setClaimOpen(false) }}>
-        <form onSubmit={(e) => {
-          e.preventDefault()
-          void (async () => {
-            try {
-              await handleClaimSubmit(e)
-            } catch (error) {
-              console.error('Error in form submission:', error)
-            }
-          })()
-        }}>
+      <Dialog open={claimOpen} onClose={() => setClaimOpen(false)}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleClaimSubmit(e)
+          }}
+        >
           <DialogTitle>Claim Certificate</DialogTitle>
           <DialogContent>
             <DialogContentText paragraph>
-              Are you sure you want to claim this certificate? You'll receive back your {selectedCertificate?.sats} satoshis.
+              Are you sure you want to claim this certificate? You'll receive back your{' '}
+              {selectedCertificate?.sats} satoshis.
             </DialogContentText>
             {selectedCertificate && (
               <>
-                <Typography variant='subtitle1'>Source: {selectedCertificate.certData.source}</Typography>
-                <Typography variant='subtitle1'>Amount: {selectedCertificate.certData.amount}</Typography>
-                <Typography variant='subtitle1'>Location: {selectedCertificate.certData.location}</Typography>
-                <Typography variant='subtitle1'>Date: {selectedCertificate.certData.date}</Typography>
+                <Typography variant='subtitle1'>
+                  Source: {selectedCertificate.certData.source}
+                </Typography>
+                <Typography variant='subtitle1'>
+                  Amount: {selectedCertificate.certData.amount}
+                </Typography>
+                <Typography variant='subtitle1'>
+                  Location: {selectedCertificate.certData.location}
+                </Typography>
+                <Typography variant='subtitle1'>
+                  Date: {selectedCertificate.certData.date}
+                </Typography>
               </>
             )}
           </DialogContent>
@@ -450,8 +563,10 @@ const App: React.FC = () => {
             <LoadingBar />
           ) : (
             <DialogActions>
-              <Button onClick={() => { setClaimOpen(false) }}>Cancel</Button>
-              <Button type='submit' variant='contained' color='primary'>Claim Certificate</Button>
+              <Button onClick={() => setClaimOpen(false)}>Cancel</Button>
+              <Button type='submit' variant='contained' color='primary'>
+                Claim Certificate
+              </Button>
             </DialogActions>
           )}
         </form>
