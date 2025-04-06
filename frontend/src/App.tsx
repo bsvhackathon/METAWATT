@@ -2,8 +2,8 @@
 /**
  * src/App.tsx
  *
- * This file contains the primary business logic and UI code for the ToDo
- * application.
+ * This file contains the primary business logic and UI code for the METAWATT
+ * application for renewable energy certificates.
  */
 import React, { useState, useEffect, type FormEvent } from 'react'
 import { ToastContainer, toast } from 'react-toastify'
@@ -11,7 +11,8 @@ import 'react-toastify/dist/ReactToastify.css'
 import {
   AppBar, Toolbar, List, ListItem, ListItemText, ListItemIcon, Checkbox, Dialog,
   DialogTitle, DialogContent, DialogContentText, DialogActions, TextField,
-  Button, Fab, LinearProgress, Typography, IconButton, Grid
+  Button, Fab, LinearProgress, Typography, IconButton, Grid, Card, CardContent,
+  CardActions
 } from '@mui/material'
 import { styled } from '@mui/system'
 import AddIcon from '@mui/icons-material/Add'
@@ -20,15 +21,15 @@ import useAsyncEffect from 'use-async-effect'
 import NoMncModal from './components/NoMncModal/NoMncModal'
 import { WalletClient, PushDrop, Utils, Transaction, LockingScript, type WalletOutput, Beef, TransactionOutput, BeefTx } from '@bsv/sdk'
 import checkForMetaNetClient from './utils/checkForMetaNetClient'
-import { type Task } from './types/types'
+import { type Certificate } from './types/types'
 // This stylesheet also uses this for themeing.
 import './App.scss'
 import { Services } from '@bsv/wallet-toolbox-client'
 
-// This is the namespace address for the ToDo protocol
+// This is the namespace address for the METAWATT protocol
 // You can create your own Bitcoin address to use, and customize this protocol
 // for your own needs.
-const TODO_PROTO_ADDR = '1ToDoDtKreEzbHYKFjmoBuduFmSXXUGZG'
+const METAWATT_PROTO_ADDR = '1METAWATTCertificateTokenProtocolxyz'
 
 // These are some basic styling rules for the React application.
 // We are using MUI (https://mui.com) for all of our UI components (i.e. buttons and dialogs etc.).
@@ -42,13 +43,6 @@ const NoItems = styled(Grid)({
   marginTop: '5em'
 })
 
-const AddMoreFab = styled(Fab)({
-  position: 'fixed',
-  right: '1em',
-  bottom: '1em',
-  zIndex: 10
-})
-
 const LoadingBar = styled(LinearProgress)({
   margin: '1em'
 })
@@ -57,20 +51,55 @@ const GitHubIconStyle = styled(IconButton)({
   color: '#ffffff'
 })
 
+const MarketplaceContainer = styled(Grid)({
+  padding: '2em'
+})
+
+const CertificateCard = styled(Card)({
+  margin: '1em',
+  padding: '1em'
+})
+
 const walletClient = new WalletClient()
+
+// Hardcoded renewable energy certificates for the marketplace
+const marketplaceCertificates = [
+  {
+    id: 'cert-001',
+    source: 'Solar Farm A',
+    location: 'Arizona, USA',
+    amount: '100 kWh',
+    date: '2025-03-15',
+    price: 1000
+  },
+  {
+    id: 'cert-002',
+    source: 'Wind Farm B',
+    location: 'Texas, USA',
+    amount: '250 kWh',
+    date: '2025-03-20',
+    price: 2000
+  },
+  {
+    id: 'cert-003',
+    source: 'Hydro Plant C',
+    location: 'Washington, USA',
+    amount: '500 kWh',
+    date: '2025-03-25',
+    price: 5000
+  }
+]
 
 const App: React.FC = () => {
   // These are some state variables that control the app's interface.
   const [isMncMissing, setIsMncMissing] = useState<boolean>(false)
-  const [createOpen, setCreateOpen] = useState<boolean>(false)
-  const [createTask, setCreateTask] = useState<string>('')
-  const [createAmount, setCreateAmount] = useState<number>(1000)
-  const [createLoading, setCreateLoading] = useState<boolean>(false)
-  const [tasksLoading, setTasksLoading] = useState<boolean>(true)
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [completeOpen, setCompleteOpen] = useState<boolean>(false)
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
-  const [completeLoading, setCompleteLoading] = useState<boolean>(false)
+  const [buyLoading, setBuyLoading] = useState<boolean>(false)
+  const [selectedCertId, setSelectedCertId] = useState<string | null>(null)
+  const [certificates, setCertificates] = useState<Certificate[]>([])
+  const [certificatesLoading, setCertificatesLoading] = useState<boolean>(true)
+  const [claimOpen, setClaimOpen] = useState<boolean>(false)
+  const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null)
+  const [claimLoading, setClaimLoading] = useState<boolean>(false)
 
   // Run a 1s interval for checking if MNC is running
   useAsyncEffect(() => {
@@ -93,174 +122,104 @@ const App: React.FC = () => {
     }
   }, [])
 
-  // Creates a new ToDo token.
-  // This function will run when the user clicks "OK" in the creation dialog.
-  const handleCreateSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
-    e.preventDefault() // Stop the HTML form from reloading the page.
+  // Creates a new METAWATT certificate token
+  const handleBuyCertificate = async (certId: string): Promise<void> => {
     try {
-      // Here, we handle some basic mistakes the user might have made.
-      if (createTask === '') {
-        toast.error('Enter a task to complete!')
-        return
-      }
-      if (createAmount === 0 || isNaN(createAmount)) {
-        toast.error('Enter an amount for the new task!')
-        return
-      }
-      if (createAmount < 1) {
-        toast.error('The amount must be more than 1 satoshis!')
+      // Find the certificate in the marketplace
+      const cert = marketplaceCertificates.find(c => c.id === certId)
+      if (!cert) {
+        toast.error('Certificate not found!')
         return
       }
 
-      // Now, we start a loading bar before the encryption and heavy lifting.
-      setCreateLoading(true)
+      // Start loading animation
+      setBuyLoading(true)
+      setSelectedCertId(certId)
 
-      // We can take the user's input from the text field (their new task), and
-      // encrypt it with a key that only they have. When we put the encrypted
-      // value into a ToDo Bitcoin token, only the same user can get it back
-      // later on, after creation.
-      const encryptedTask = (await walletClient.encrypt({
-        // The plaintext for encryption is what the user put into the text field.
-        // encrypt() expects an array of numbers. The BSV provides toArray(), a utility function that creates a number array from a string.
-        plaintext: Utils.toArray(createTask, 'utf8'),
-        // The protocolID and keyID are important. When users encrypt things, they can do so in different contexts. The protocolID is the "context" in which a user has encrypted something. When your app uses a new protocol, it can only do so with the permission of the user.
-        protocolID: [0, 'todo list'],
-        // The keyID can be used to enable multiple keys for different
-        // operations within the same protocol.For our simple "todo list"
-        // protocol, let's all just agree that the keyID should be "1".
+      // Create certificate data string
+      const certData = JSON.stringify(cert)
+
+      // Encrypt the certificate data
+      const encryptedCert = (await walletClient.encrypt({
+        plaintext: Utils.toArray(certData, 'utf8'),
+        protocolID: [0, 'metawatt'],
         keyID: '1'
-        // P.S. We'll need to use the exact same protocolID and keyID later,
-        // when we want to decrypt the ToDo list items.Otherwise, the
-        // decryption would fail.
       })).ciphertext
 
-      // Here's the part where we create the new Bitcoin token.
-      // This uses a library called PushDrop, which lets you attach data
-      // payloads to Bitcoin token outputs.Then, you can redeem / unlock the
-      // tokens later.
+      // Create a PushDrop Bitcoin token for the certificate
       const pushdrop = new PushDrop(walletClient)
       const bitcoinOutputScript = await pushdrop.lock(
-        [ // The "fields" are the data payload to attach to the token.
-          // For more info on these fields, look at the ToDo protocol document
-          // (PROTOCOL.md). Note that the PushDrop library handles the public
-          // key, signature, and OP_DROP fields automatically.
-          Utils.toArray(TODO_PROTO_ADDR, 'utf8') as number[], // TODO protocol namespace address TODOMATT remove the as number[] after updated sdk
-          encryptedTask // TODO task (encrypted)
+        [
+          Utils.toArray(METAWATT_PROTO_ADDR, 'utf8') as number[], 
+          encryptedCert
         ],
-        // The same "todo list" protocol and key ID can be used to sign and
-        // lock this new Bitcoin PushDrop token.
-        [0, 'todo list'],
+        [0, 'metawatt'],
         '1',
         'self'
       )
 
-      // Now that we have the output script for our ToDo Bitcoin token, we can
-      // add it to a Bitcoin transaction (a.k.a. "Action"), and register the
-      // new token with the blockchain. On the MetaNet, Actions are anything
-      // that a user does, and all Actions take the form of Bitcoin
-      // transactions.
-      const newToDoToken = await walletClient.createAction({
-        // This Bitcoin transaction ("Action" with a capital A) has one output,
-        // because it has led to the creation of a new Bitcoin token. The token
-        // that gets created represents our new ToDo list item.
+      // Create a Bitcoin transaction for the new certificate token
+      const newCertificateToken = await walletClient.createAction({
         outputs: [{
-          // The output script for this token was created by PushDrop library,
-          // which you can see above.
           lockingScript: bitcoinOutputScript.toHex(),
-          // The output amount is how much Bitcoin (measured in "satoshis")
-          // this token is worth. We use the value that the user entered in the
-          // dialog box.
-          satoshis: Number(createAmount),
-          // We can put the new output into a "basket" which will keep track of
-          // it, so that we can get it back later.
-          basket: 'todo tokens',
-          // Lastly, we should describe this output for the user.
-          outputDescription: 'New ToDo list item'
+          satoshis: cert.price,
+          basket: 'metawatt certificates',
+          outputDescription: `Renewable Energy Certificate: ${cert.source} - ${cert.amount}`
         }],
         options: {
           randomizeOutputs: false,
           acceptDelayedBroadcast: false
         },
-        // Describe the Actions that your app facilitates, in the present
-        // tense, for the user's future reference.
-        description: `Create a TODO task: ${createTask}`
+        description: `Purchase Renewable Energy Certificate: ${cert.source} - ${cert.amount}`
       })
 
-      // if (newToDoToken.log != null && newToDoToken.log !== '') { // TODOMATT what should i do about logging here?
-      //   console.log(stampLogFormat(newToDoToken.log))
-      // }
-
-      // Now, we just let the user know the good news! Their token has been
-      // created, and added to the list.
-      toast.dark('Task successfully created!')
-      setTasks([
+      // Success message and update state
+      toast.dark('Certificate purchased successfully!')
+      setCertificates([
         {
-          task: createTask,
-          sats: Number(createAmount),
-          outpoint: `${newToDoToken.txid}.0`,
+          certData: cert,
+          sats: cert.price,
+          outpoint: `${newCertificateToken.txid}.0`,
           lockingScript: bitcoinOutputScript.toHex(),
-          beef: newToDoToken.tx
+          beef: newCertificateToken.tx
         },
-        ...tasks
+        ...certificates
       ])
-      setCreateTask('')
-      setCreateAmount(1000)
-      setCreateOpen(false)
     } catch (e) {
-      // Any errors are shown on the screen and printed in the developer console
       toast.error((e as Error).message)
       console.error(e)
     } finally {
-      setCreateLoading(false)
+      setBuyLoading(false)
+      setSelectedCertId(null)
     }
   }
 
-  // Redeems the ToDo token, marking the selected task as completed.
-  // This function runs when the user clicks the "complete" button on the
-  // completion dialog.
-  const handleCompleteSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
-    e.preventDefault() // Stop the HTML form from reloading the page.
+  // Claims a certificate token, returning the satoshis
+  const handleClaimSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault()
     try {
-      // Start a loading bar to let the user know we're working on it.
-      setCompleteLoading(true)
+      setClaimLoading(true)
 
-      if (selectedTask === null) {
-        throw new Error('selectedTask does not exist')
+      if (selectedCertificate === null) {
+        throw new Error('selectedCertificate does not exist')
       }
 
-      // Let the user know what's going on, and why they're getting some
-      // Bitcoins back.
-      let description = `Complete a TODO task: "${selectedTask.task}"`
-      if (description.length > 128) { description = description.substring(0, 128) }
+      // Create a description for the action
+      let description = `Claim Renewable Energy Certificate: ${selectedCertificate.certData.source} - ${selectedCertificate.certData.amount}`
+      if (description.length > 128) { 
+        description = description.substring(0, 128) 
+      }
 
-      // const inputBeef = new Beef()
-      // inputBeef.mergeBeef(selectedTask.beef as number[])
-
-      const txid = selectedTask.outpoint.split('.')[0]
-      // const loadedBeef = Beef.fromBinary(selectedTask.beef as number[])
-      // const isValid = loadedBeef.isValid()
-      // if (!isValid) {
-      //   console.log(loadedBeef.toLogString())
-      //   throw new Error('The existing BEEF for this task is not valid!')
-      // }
-
-      // If you want an atomic BEEF that includes the final TX `txid` plus its ancestors:
-      // const atomicBEEF = loadedBeef.toBinaryAtomic(txid)
-      const loadedBeef = Beef.fromBinary(selectedTask.beef as number[])
+      const txid = selectedCertificate.outpoint.split('.')[0]
+      const loadedBeef = Beef.fromBinary(selectedCertificate.beef as number[])
       const ok = await loadedBeef.verify(await new Services('main').getChainTracker(), true)
-      // const txTest = Transaction.fromBEEF(selectedTask.beef as number[], txid)
+
       const { signableTransaction } = await walletClient.createAction({
         description,
-        // These are inputs, which unlock Bitcoin tokens.
-        // The input comes from the previous ToDo token, which we're now
-        // completing, redeeming and spending.
         inputBEEF: loadedBeef.toBinary(),
         inputs: [{
-          // Spending descriptions tell the user why this input was redeemed
-          inputDescription: 'Complete a ToDo list item',
-          // The output we want to redeem is specified here
-          outpoint: selectedTask.outpoint,
-          // Provide a placeholder length for the unlocking script we will create and add later
+          inputDescription: 'Claim Renewable Energy Certificate',
+          outpoint: selectedCertificate.outpoint,
           unlockingScriptLength: 73
         }],
         options: {
@@ -273,32 +232,20 @@ const App: React.FC = () => {
       }
       const partialTx = Transaction.fromBEEF(signableTransaction.tx)
 
-      // Here, we're using the PushDrop library to unlcok / redeem the PushDrop
-      // token that was previously created. By providing this information,
-      // PushDrop can "unlock" and spend the token. When the token gets spent,
-      // the user gets their bitcoins back, and the ToDo token is removed from
-      // the list.
+      // Unlock the token
       const unlocker = new PushDrop(walletClient).unlock(
-        // To unlock the token, we need to use the same "todo list" protocolID
-        // and keyID as when we created the ToDo token before. Otherwise, the
-        // key won't fit the lock and the Bitcoins won't come out.
-        [0, 'todo list'],
+        [0, 'metawatt'],
         '1',
         'self',
         'all',
         false,
-        // the amount of Bitcoins we are expecting to unlock when the puzzle gets solved.
-        selectedTask.sats,
-        // We also give PushDrop a copy of the locking puzzle ("script") that
-        // we want to open, which is helpful in preparing to unlock it.
-        LockingScript.fromHex(selectedTask.lockingScript)
+        selectedCertificate.sats,
+        LockingScript.fromHex(selectedCertificate.lockingScript)
       )
 
       const unlockingScript = await unlocker.sign(partialTx, 0)
 
-      // Now, we're going to use the unlocking puzle that PushDrop has prepared
-      // for us, so that the user can get their Bitcoins back.This is another
-      // "Action", which is just a Bitcoin transaction. TODOMATT rewrite this section's comments
+      // Sign the action to claim the certificate
       const signResult = await walletClient.signAction({
         reference: signableTransaction.reference,
         spends: {
@@ -309,117 +256,86 @@ const App: React.FC = () => {
       })
       console.log(signResult)
 
-      // if (r.log != null && r.log !== '') { TODOMATT logging here and 2 lines up?
-      //   console.log(stampLogFormat(r.log))
-      // }
-
-      // Finally, we let the user know about the good news, and that their
-      // completed ToDo token has been removed from their list! The satoshis
-      // have now been unlocked, and are back in their posession.
-      toast.dark('Congrats! Task complete 🎉')
-      setTasks((oldTasks) => {
-        const index = oldTasks.findIndex(x => x === selectedTask)
-        if (index > -1) oldTasks.splice(index, 1)
-        return [...oldTasks]
+      // Success message and update state
+      toast.dark('Certificate claimed successfully! 🎉')
+      setCertificates((oldCerts) => {
+        const index = oldCerts.findIndex(x => x === selectedCertificate)
+        if (index > -1) oldCerts.splice(index, 1)
+        return [...oldCerts]
       })
-      setSelectedTask(null)
-      setCompleteOpen(false)
+      setSelectedCertificate(null)
+      setClaimOpen(false)
     } catch (e) {
-      toast.error(`Error completing task: ${(e as Error).message}`)
+      toast.error(`Error claiming certificate: ${(e as Error).message}`)
       console.error(e)
     } finally {
-      setCompleteLoading(false)
+      setClaimLoading(false)
     }
   }
 
-  // This loads a user's existing ToDo tokens from their token basket
-  // whenever the page loads. This populates their ToDo list.
-  // A basket is just a way to keep track of different kinds of Bitcoin tokens.
+  // Load existing certificate tokens from the user's basket
   useEffect(() => {
     void (async () => {
       try {
-        // We use a function called "listOutputs" to fetch this
-        // user's current ToDo tokens from their basket. Tokens are just a way
-        // to represent something of value, like a task that needs to be
-        // completed.
-        // This function will only get tokens that are active on the list, not already complete TODOMATT CHECK THIS
-        const tasksFromBasket = await walletClient.listOutputs({
-          // The name of the basket where the tokens are kept
-          basket: 'todo tokens',
-          // Also get the envelope needed if we complete (spend) the ToDo token
+        // Fetch existing certificates from the user's basket
+        const certsFromBasket = await walletClient.listOutputs({
+          basket: 'metawatt certificates',
           include: 'entire transactions'
         })
-        // Now that we have the data (in the tasksFromBasket variable), we will
-        // decode and decrypt the tasks we got from the basket.When the tasks
-        // were created, they were encrypted so that only this user could read
-        // them.Here, the encryption process is reversed.
+
+        // Decrypt and process the certificates
         let txid: string
-        const decryptedTasksResults = await Promise.all(tasksFromBasket.outputs.map(async (task: WalletOutput, i: number) => {
+        const decryptedCertsResults = await Promise.all(certsFromBasket.outputs.map(async (cert: WalletOutput, i: number) => {
           try {
-            txid = tasksFromBasket.outputs[i].outpoint.split('.')[0]
-            const tx = Transaction.fromBEEF(tasksFromBasket.BEEF as number[], task.outpoint.split('.')[0])
+            txid = certsFromBasket.outputs[i].outpoint.split('.')[0]
+            const tx = Transaction.fromBEEF(certsFromBasket.BEEF as number[], cert.outpoint.split('.')[0])
             const lockingScript = tx!.outputs[0].lockingScript
 
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            // const lockingScript = parsedTx.outputs[i].lockingScript
-            const decodedTask = PushDrop.decode(lockingScript)
-            const encryptedTask = decodedTask.fields[1]
-            const decryptedTaskNumArray =
-              await walletClient.decrypt({
-                ciphertext: encryptedTask,
-                protocolID: [0, 'todo list'],
-                keyID: '1'
-              })
-            const decryptedTask = Utils.toUTF8(decryptedTaskNumArray.plaintext)
+            const decodedCert = PushDrop.decode(lockingScript)
+            const encryptedCert = decodedCert.fields[1]
+            const decryptedCertNumArray = await walletClient.decrypt({
+              ciphertext: encryptedCert,
+              protocolID: [0, 'metawatt'],
+              keyID: '1'
+            })
+            const decryptedCertString = Utils.toUTF8(decryptedCertNumArray.plaintext)
+            const certData = JSON.parse(decryptedCertString)
 
             return {
               lockingScript: lockingScript.toHex(),
               outpoint: `${txid}.${i}`,
-              sats: task.satoshis ?? 0,
-              task: decryptedTask,
-              beef: tasksFromBasket.BEEF
+              sats: cert.satoshis ?? 0,
+              certData: certData,
+              beef: certsFromBasket.BEEF
             }
           } catch (error) {
-            console.error('Error decrypting task:', error)
+            console.error('Error decrypting certificate:', error)
             return null
           }
         }))
 
-        // Filter out outputs that returned null (i.e. errors)
-        const decryptedTasks: Task[] = decryptedTasksResults.filter(
-          (result): result is Task => result !== null
+        // Filter out nulls (errors) and reverse the order
+        const decryptedCerts: Certificate[] = decryptedCertsResults.filter(
+          (result): result is Certificate => result !== null
         )
 
-
-        // We reverse the list, so the newest tasks show up at the top
-        setTasks(decryptedTasks.reverse())
+        setCertificates(decryptedCerts.reverse())
       } catch (e) {
-        // Any larger errors are also handled. If these steps fail, maybe the
-        // user didn't give our app the right permissions, and we couldn't use
-        // the "todo list" protocol.
-
-        // Check if the error code is related to missing MNC and supress.
-        // MNC is being polled until it is launched so no error message is required.
         const errorCode = (e as any).code
         if (errorCode !== 'ERR_NO_METANET_IDENTITY') {
-          toast.error(`Failed to load ToDo tasks! Error: ${(e as Error).message}`)
+          toast.error(`Failed to load certificates! Error: ${(e as Error).message}`)
           console.error(e)
         }
       } finally {
-        setTasksLoading(false)
+        setCertificatesLoading(false)
       }
     })()
   }, [])
 
-  // The rest of this file just contains some UI code. All the juicy
-  // Bitcoin - related stuff is above.
-
-  // ----------
-
-  // Opens the completion dialog for the selected task
-  const openCompleteModal = (task: Task) => () => {
-    setSelectedTask(task)
-    setCompleteOpen(true)
+  // Opens the claim dialog for the selected certificate
+  const openClaimModal = (cert: Certificate) => () => {
+    setSelectedCertificate(cert)
+    setClaimOpen(true)
   }
 
   return (
@@ -439,120 +355,105 @@ const App: React.FC = () => {
       <AppBar position='static'>
         <Toolbar>
           <Typography variant='h6' component='div' sx={{ flexGrow: 1 }}>
-            ToDo List — Get Rewarded!
+            METAWATT — Renewable Energy Certificates
           </Typography>
-          <GitHubIconStyle onClick={() => window.open('https://github.com/p2ppsr/todo-react', '_blank')}>
+          <GitHubIconStyle onClick={() => window.open('https://github.com/metawatt', '_blank')}>
             <GitHubIcon />
           </GitHubIconStyle>
         </Toolbar>
       </AppBar>
       <AppBarPlaceholder />
 
-      {tasks.length >= 1 && (
-        <AddMoreFab color='primary' onClick={() => { setCreateOpen(true) }}>
-          <AddIcon />
-        </AddMoreFab>
+      {/* Marketplace Section */}
+      <Typography variant='h4' sx={{ margin: '1em' }}>Marketplace</Typography>
+      <MarketplaceContainer container spacing={2}>
+        {marketplaceCertificates.map((cert) => (
+          <Grid item xs={12} sm={6} md={4} key={cert.id}>
+            <CertificateCard>
+              <CardContent>
+                <Typography variant='h5'>{cert.source}</Typography>
+                <Typography variant='body1'>Location: {cert.location}</Typography>
+                <Typography variant='body1'>Amount: {cert.amount}</Typography>
+                <Typography variant='body1'>Date: {cert.date}</Typography>
+                <Typography variant='body1'>Price: {cert.price} satoshis</Typography>
+              </CardContent>
+              <CardActions>
+                <Button 
+                  variant='contained' 
+                  color='primary'
+                  disabled={buyLoading && selectedCertId === cert.id}
+                  onClick={() => { void handleBuyCertificate(cert.id) }}
+                >
+                  {buyLoading && selectedCertId === cert.id ? 'Processing...' : 'Buy Certificate'}
+                </Button>
+              </CardActions>
+            </CertificateCard>
+          </Grid>
+        ))}
+      </MarketplaceContainer>
+
+      {/* My Certificates Section */}
+      <Typography variant='h4' sx={{ margin: '1em' }}>My Certificates</Typography>
+      {certificatesLoading ? (
+        <LoadingBar />
+      ) : (
+        <List>
+          {certificates.length === 0 && (
+            <NoItems container direction='column' justifyContent='center' alignItems='center'>
+              <Grid item justifyContent="center" alignItems="center">
+                <Typography variant='h5'>No Certificates Owned</Typography>
+                <Typography color='textSecondary'>
+                  Purchase certificates from the marketplace above
+                </Typography>
+              </Grid>
+            </NoItems>
+          )}
+          {certificates.map((cert, i) => (
+            <ListItem key={i} button onClick={openClaimModal(cert)}>
+              <ListItemIcon><Checkbox checked={false} /></ListItemIcon>
+              <ListItemText 
+                primary={`${cert.certData.source} - ${cert.certData.amount}`} 
+                secondary={`${cert.sats} satoshis - Click to claim`} 
+              />
+            </ListItem>
+          ))}
+        </List>
       )}
 
-      {tasksLoading
-        ? (<LoadingBar />)
-        : (
-          <List>
-            {tasks.length === 0 && (
-              <NoItems container direction='column' justifyContent='center' alignItems='center'>
-                <Grid item justifyContent="center" alignItems="center">
-                  <Typography variant='h4'>No ToDo Items</Typography>
-                  <Typography color='textSecondary'>
-                    Use the button below to start a task
-                  </Typography>
-                </Grid>
-                <Grid item justifyContent="center" alignItems="center" sx={{ paddingTop: '2.5em', marginBottom: '1em' }}>
-                  <Fab color='primary' onClick={() => { setCreateOpen(true) }}>
-                    <AddIcon />
-                  </Fab>
-                </Grid>
-              </NoItems>
+      {/* Claim Certificate Dialog */}
+      <Dialog open={claimOpen} onClose={() => { setClaimOpen(false) }}>
+        <form onSubmit={(e) => {
+          e.preventDefault()
+          void (async () => {
+            try {
+              await handleClaimSubmit(e)
+            } catch (error) {
+              console.error('Error in form submission:', error)
+            }
+          })()
+        }}>
+          <DialogTitle>Claim Certificate</DialogTitle>
+          <DialogContent>
+            <DialogContentText paragraph>
+              Are you sure you want to claim this certificate? You'll receive back your {selectedCertificate?.sats} satoshis.
+            </DialogContentText>
+            {selectedCertificate && (
+              <>
+                <Typography variant='subtitle1'>Source: {selectedCertificate.certData.source}</Typography>
+                <Typography variant='subtitle1'>Amount: {selectedCertificate.certData.amount}</Typography>
+                <Typography variant='subtitle1'>Location: {selectedCertificate.certData.location}</Typography>
+                <Typography variant='subtitle1'>Date: {selectedCertificate.certData.date}</Typography>
+              </>
             )}
-            {tasks.map((x, i) => (
-              <ListItem key={i} button onClick={openCompleteModal(x)}>
-                <ListItemIcon><Checkbox checked={false} /></ListItemIcon>
-                <ListItemText primary={x.task} secondary={`${x.sats} satoshis`} />
-              </ListItem>
-            ))}
-          </List>
-        )
-      }
-
-      <Dialog open={createOpen} onClose={() => { setCreateOpen(false) }}>
-        <form onSubmit={(e) => {
-          e.preventDefault()
-          void (async () => {
-            try {
-              await handleCreateSubmit(e)
-            } catch (error) {
-              console.error('Error in form submission:', error)
-            }
-          })()
-        }}>
-          <DialogTitle>Create a Task</DialogTitle>
-          <DialogContent>
-            <DialogContentText paragraph>
-              Describe your task and set aside some satoshis you&apos;ll get back once it&apos;s done.
-            </DialogContentText>
-            <TextField
-              multiline rows={3} fullWidth autoFocus
-              label='Task to complete'
-              onChange={(e: { target: { value: React.SetStateAction<string> } }) => { setCreateTask(e.target.value) }}
-              value={createTask}
-            />
-            <br /><br />
-            <TextField
-              fullWidth
-              type='number'
-              inputProps={{ min: 1 }}
-              label='Completion amount'
-              onChange={(e: { target: { value: any } }) => { setCreateAmount(Number(e.target.value)) }}
-              value={createAmount}
-            />
           </DialogContent>
-          {createLoading
-            ? (<LoadingBar />)
-            : (
-              <DialogActions>
-                <Button onClick={() => { setCreateOpen(false) }}>Cancel</Button>
-                <Button type='submit'>OK</Button>
-              </DialogActions>
-            )
-          }
-        </form>
-      </Dialog>
-
-      <Dialog open={completeOpen} onClose={() => { setCompleteOpen(false) }}>
-        <form onSubmit={(e) => {
-          e.preventDefault()
-          void (async () => {
-            try {
-              await handleCompleteSubmit(e)
-            } catch (error) {
-              console.error('Error in form submission:', error)
-            }
-          })()
-        }}>
-          <DialogTitle>Complete &quot;{selectedTask?.task}&quot;?</DialogTitle>
-          <DialogContent>
-            <DialogContentText paragraph>
-              By marking this task as complete, you&apos;ll receive back your {selectedTask?.sats} satoshis.
-            </DialogContentText>
-          </DialogContent>
-          {completeLoading
-            ? (<LoadingBar />)
-            : (
-              <DialogActions>
-                <Button onClick={() => { setCompleteOpen(false) }}>Cancel</Button>
-                <Button type='submit'>Complete Task</Button>
-              </DialogActions>
-            )
-          }
+          {claimLoading ? (
+            <LoadingBar />
+          ) : (
+            <DialogActions>
+              <Button onClick={() => { setClaimOpen(false) }}>Cancel</Button>
+              <Button type='submit' variant='contained' color='primary'>Claim Certificate</Button>
+            </DialogActions>
+          )}
         </form>
       </Dialog>
     </>

@@ -13,3 +13,19 @@ export interface Task {
   lockingScript: string
   beef: BEEF | undefined
 }
+
+
+export interface Certificate {
+  certData: {
+    id: string
+    source: string
+    location: string
+    amount: string
+    date: string
+    price: number
+  }
+  sats: number
+  outpoint: string
+  lockingScript: string
+  beef: number[] | undefined
+}
